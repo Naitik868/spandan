@@ -3,15 +3,18 @@ import PasswordResetToken from '../models/PasswordResetToken.js'
 
 const TOKEN_EXPIRY_MS = 3600000 // 1 hour
 
+const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex')
+
 export const generateResetToken = async (email) => {
   const token = crypto.randomBytes(32).toString('hex')
+  const hashedToken = hashToken(token)
   const expires = new Date(Date.now() + TOKEN_EXPIRY_MS)
   
   await PasswordResetToken.findOneAndDelete({ email: email.toLowerCase() })
   
   const resetToken = new PasswordResetToken({
     email: email.toLowerCase(),
-    token,
+    token: hashedToken,
     expires
   })
   
@@ -24,7 +27,10 @@ export const generateResetToken = async (email) => {
 }
 
 export const verifyResetToken = async (token) => {
-  const resetToken = await PasswordResetToken.findOne({ token })
+  const hashedToken = hashToken(token)
+  const resetToken = await PasswordResetToken.findOne({
+    $or: [{ token: hashedToken }, { token }]
+  })
   
   if (!resetToken) {
     return { valid: false, message: 'Invalid or expired token' }
@@ -61,7 +67,11 @@ export const resetPassword = async (token, newPassword) => {
   await user.save()
   
   // Mark token as used
-  await PasswordResetToken.findOneAndUpdate({ token }, { used: true })
+  const hashedToken = hashToken(token)
+  await PasswordResetToken.findOneAndUpdate(
+    { $or: [{ token: hashedToken }, { token }] },
+    { used: true }
+  )
   
   return true
 }

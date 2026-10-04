@@ -458,7 +458,7 @@ async function verifyRoomOwner(socket, roomCode) {
   try {
     const Room = (await import('./models/Room.js')).default
     const room = await Room.findByCode(roomCode)
-    return (room && room.teacher.toString() === String(socket.data.userId)) ? room : null
+    return (room && String(room.teacher?._id ?? room.teacher) === String(socket.data.userId)) ? room : null
   } catch {
     return null
   }
@@ -470,6 +470,7 @@ async function verifyRoomOwner(socket, roomCode) {
 // immediately without waiting for the next broadcast tick.
 const videoProgress = new Map() // roomCode -> { time }
 const videoPaused = new Map() // roomCode -> true while the teacher's question popup is open (students hold their video paused)
+const activePolls = new Map() // roomCode -> { questionId, question, timer, startTime } for zero-DB reload & late-join recovery
 
 // Mark which question is CURRENTLY LIVE for a room. Set on every launch and NEVER cleared: the read
 // endpoints withhold the correct answer of `currentQuestion` from students while it is live, and it
@@ -604,6 +605,23 @@ io.on('connection', (socket) => {
       if (vp) socket.emit('video:progress', { time: vp.time, playing: vp.playing })
       // If the teacher's question popup is currently open, a late-joining student must start paused.
       if (videoPaused.get(roomCode)) socket.emit('video:pause')
+
+      // Sync active poll if currently running (handles student reload / late-join seamlessly from RAM)
+      const activePoll = activePolls.get(roomCode)
+      if (activePoll) {
+        const elapsedSec = Math.floor((Date.now() - activePoll.startTime) / 1000)
+        const remainingSec = activePoll.timer - elapsedSec
+        if (remainingSec > 0) {
+          socket.emit('question:started', {
+            questionId: activePoll.questionId,
+            question: activePoll.question,
+            timer: remainingSec,
+            startTime: activePoll.startTime
+          })
+        } else {
+          activePolls.delete(roomCode)
+        }
+      }
     } catch (error) {
       console.error('Error in room:join:', error)
       socket.emit('room:error', { error: 'Failed to join room' })
@@ -612,8 +630,6 @@ io.on('connection', (socket) => {
 
   // Leave room — identity from the authenticated socket.
   socket.on('room:leave', async ({ roomCode }) => {
-    const userId = socket.data?.userId
-    const role = socket.data?.role
     if (!roomCode) return
     try {
       const Room = (await import('./models/Room.js')).default
@@ -624,9 +640,7 @@ io.on('connection', (socket) => {
 
       let participantCount = 0
       if (room) {
-        if (role === 'student' && userId) {
-          await RoomMember.deleteOne({ roomId: room._id, studentId: userId })
-        }
+        // Membership record is preserved across page refreshes and reconnections
         participantCount = await RoomMember.countDocuments({ roomId: room._id })
       }
 
@@ -649,16 +663,32 @@ io.on('connection', (socket) => {
     const room = await verifyRoomOwner(socket, data?.roomCode)
     if (!room) return
     if (data.questionId) setLiveQuestion(room._id, data.questionId)
+    const sanitizedQuestion = sanitizeQuestionForStudents(data.question)
+    const duration = (data.question && data.question.timeToAnswer) || data.timer || 30
+    const startTime = Date.now()
+
+    if (data.roomCode) {
+      activePolls.set(data.roomCode, {
+        questionId: data.questionId,
+        question: sanitizedQuestion,
+        timer: duration,
+        startTime
+      })
+    }
+
     io.to(data.roomCode).emit('question:started', {
       questionId: data.questionId,
-      question: sanitizeQuestionForStudents(data.question),
-      timer: data.timer,
-      startTime: Date.now()
+      question: sanitizedQuestion,
+      timer: duration,
+      startTime
     })
   })
 
   socket.on('question:end', async (data) => {
     if (!(await verifyRoomOwner(socket, data?.roomCode))) return
+    if (data?.roomCode) {
+      activePolls.delete(data.roomCode)
+    }
     io.to(data.roomCode).emit('question:ended', {
       questionId: data.questionId,
       results: data.results

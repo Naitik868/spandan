@@ -56,9 +56,16 @@ export const getRoomsByTeacher = async (teacherId, options = {}) => {
 }
 
 export const updateRoom = async (roomId, updates) => {
+  // Strip immutable / sensitive fields to prevent mass assignment
+  const safeUpdates = { ...updates }
+  delete safeUpdates.teacher
+  delete safeUpdates.code
+  delete safeUpdates._id
+  delete safeUpdates.createdAt
+
   const room = await Room.findByIdAndUpdate(
     roomId,
-    { $set: updates },
+    { $set: safeUpdates },
     { new: true, runValidators: true }
   )
 
@@ -69,7 +76,7 @@ export const updateRoom = async (roomId, updates) => {
   // If this update ends the room, drop the room-live cache so POST /responses re-reads Mongo, sees
   // endedAt, and refuses further submits (Phase 3). This is the real end path (PUT /rooms/:id with
   // isActive:false / endedAt). Non-fatal if Redis is unavailable.
-  if (updates && (updates.isActive === false || updates.endedAt)) {
+  if (safeUpdates && (safeUpdates.isActive === false || safeUpdates.endedAt)) {
     await invalidateRoomLive(roomId)
   }
 

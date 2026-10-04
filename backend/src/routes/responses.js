@@ -422,13 +422,9 @@ router.get('/stats/room/:roomId', async (req, res) => {
 
     // Get room and verify teacher ownership
     const room = await Room.findById(roomId)
-    if (!room) {
-      return res.status(404).json({ error: 'Room not found' })
-    }
-
-    // Only the room owner (teacher) can view detailed stats
-    if (room.teacher.toString() !== currentUser._id.toString()) {
-      return res.status(403).json({ error: 'Not authorized to view this room\'s stats' })
+    const ownership = checkRoomOwnership(room, currentUser._id)
+    if (!ownership.ok) {
+      return res.status(ownership.status).json({ error: ownership.error })
     }
 
     // Ended rooms serve stats from the shared snapshot (built once at room end). A miss (live room,
@@ -523,7 +519,7 @@ router.get('/room/:roomId/student/:studentId', async (req, res) => {
       return res.status(404).json({ error: 'Room not found' })
     }
     
-    const isTeacher = room.teacher.toString() === currentUser._id.toString()
+    const isTeacher = String(room.teacher?._id ?? room.teacher) === currentUser._id.toString()
     const isSelf = currentUser._id.toString() === studentId
     
     // Allow if teacher owns room OR if student is viewing their own data
@@ -720,7 +716,7 @@ router.get('/leaderboard/:roomId', async (req, res) => {
 
     // Check if teacher owns the room
     const room = await Room.findById(roomId)
-    const isTeacher = room && room.teacher.toString() === currentUser._id.toString()
+    const isTeacher = room && String(room.teacher?._id ?? room.teacher) === currentUser._id.toString()
     
     // Check if student is a member of the room
     const isStudentMember = await RoomMember.findOne({ roomId, studentId: currentUser._id })
@@ -815,7 +811,7 @@ router.get('/room/:roomId/export', async (req, res) => {
 
     const room = await Room.findById(roomId).lean()
     if (!room) return res.status(404).json({ error: 'Room not found' })
-    if (room.teacher.toString() !== currentUser._id.toString()) {
+    if (String(room.teacher?._id ?? room.teacher) !== currentUser._id.toString()) {
       return res.status(403).json({ error: 'Not authorized to export this room' })
     }
 

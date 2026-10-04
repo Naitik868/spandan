@@ -114,27 +114,28 @@ export const updateProfile = async (userId, profileData) => {
     throw new Error('User not found')
   }
 
-  // Allowed fields to update
-  const allowedFields = [
+  // Allowed scalar fields to update
+  const scalarFields = [
     'name', 'profileImage', 'phone', 'bio', 'dateOfBirth', 'gender',
-    'address', 'socialLinks', 'enrollmentNumber', 'class',
-    'department', 'employeeId', 'qualifications'
+    'enrollmentNumber', 'class', 'department', 'employeeId', 'qualifications'
   ]
 
-  for (const field of allowedFields) {
+  for (const field of scalarFields) {
     if (profileData[field] !== undefined) {
       user[field] = profileData[field]
     }
   }
 
-  // Handle nested address object
-  if (profileData.address) {
-    user.address = { ...user.address.toObject(), ...profileData.address }
+  // Handle nested address object safely
+  if (profileData.address && typeof profileData.address === 'object') {
+    const existingAddress = user.address?.toObject ? user.address.toObject() : (user.address || {})
+    user.address = { ...existingAddress, ...profileData.address }
   }
 
-  // Handle nested socialLinks object
-  if (profileData.socialLinks) {
-    user.socialLinks = { ...user.socialLinks.toObject(), ...profileData.socialLinks }
+  // Handle nested socialLinks object safely
+  if (profileData.socialLinks && typeof profileData.socialLinks === 'object') {
+    const existingSocialLinks = user.socialLinks?.toObject ? user.socialLinks.toObject() : (user.socialLinks || {})
+    user.socialLinks = { ...existingSocialLinks, ...profileData.socialLinks }
   }
 
   await user.save()

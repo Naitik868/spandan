@@ -3,6 +3,7 @@ import Transcript from '../models/Transcript.js'
 import Room from '../models/Room.js'
 import RoomMember from '../models/RoomMember.js'
 import { authenticate } from '../middleware/auth.js'
+import { checkRoomOwnership } from '../utils/roomOwnership.js'
 
 const router = express.Router()
 
@@ -18,11 +19,9 @@ router.post('/', authenticate, async (req, res) => {
     // Authorization: only the room's OWNING teacher may write a transcript for it. Without this,
     // any authenticated user could POST a transcript against any roomId they knew.
     const room = await Room.findById(roomId)
-    if (!room) {
-      return res.status(404).json({ error: 'Room not found' })
-    }
-    if (room.teacher.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ error: 'Not authorized to add transcripts to this room' })
+    const ownership = checkRoomOwnership(room, req.user._id)
+    if (!ownership.ok) {
+      return res.status(ownership.status).json({ error: ownership.error })
     }
 
     const transcript = new Transcript({
@@ -60,7 +59,7 @@ router.get('/room/:roomId', authenticate, async (req, res) => {
     }
 
     // Check access: teacher owns room OR student is a member
-    const isTeacher = room.teacher.toString() === currentUser._id.toString()
+    const isTeacher = String(room.teacher?._id ?? room.teacher) === currentUser._id.toString()
     const isStudentMember = await RoomMember.findOne({ roomId, studentId: currentUser._id })
 
     if (!isTeacher && !isStudentMember) {
@@ -94,7 +93,7 @@ router.get('/:roomId/:segmentIndex', authenticate, async (req, res) => {
     }
 
     // Check access: teacher owns room OR student is a member
-    const isTeacher = room.teacher.toString() === currentUser._id.toString()
+    const isTeacher = String(room.teacher?._id ?? room.teacher) === currentUser._id.toString()
     const isStudentMember = await RoomMember.findOne({ roomId, studentId: currentUser._id })
 
     if (!isTeacher && !isStudentMember) {
@@ -105,10 +104,6 @@ router.get('/:roomId/:segmentIndex', authenticate, async (req, res) => {
       roomId: roomId,
       segmentIndex: parseInt(segmentIndex)
     })
-
-    if (!transcript) {
-      return res.status(404).json({ error: 'Transcript not found' })
-    }
 
     if (!transcript) {
       return res.status(404).json({ error: 'Transcript not found' })

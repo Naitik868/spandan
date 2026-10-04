@@ -28,8 +28,14 @@ function JoinRoomPage() {
   }, [token])
 
   const handleJoinRoom = async () => {
-    if (!roomCode.trim()) {
+    const code = roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (!code) {
       setError('Please enter a room code')
+      return
+    }
+
+    if (code.length !== 6) {
+      setError('Room code must be 6 characters')
       return
     }
 
@@ -37,7 +43,7 @@ function JoinRoomPage() {
     setError('')
 
     try {
-      const room = await joinRoomByCode(roomCode.trim().toUpperCase())
+      const room = await joinRoomByCode(code)
       setJoinedRoom(room)
       joinRoom(room.code, user._id)
       navigate(`/student/session/${room.code}`)
@@ -55,7 +61,8 @@ function JoinRoomPage() {
     }
   }
 
-  const isDisabled = isJoining || roomCode.length < 6
+  const sanitizedCode = roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+  const isDisabled = isJoining || sanitizedCode.length !== 6
 
   return (
     <div style={{
@@ -188,10 +195,16 @@ function JoinRoomPage() {
                 type="text"
                 value={roomCode}
                 onChange={(e) => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isDisabled) {
+                    handleJoinRoom()
+                  }
+                }}
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 placeholder="XXXXXX"
                 maxLength={6}
+                aria-label="Room code"
                 style={{
                   width: '100%',
                   padding: isMobile ? '16px 12px' : '20px 16px',

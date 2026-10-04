@@ -206,10 +206,9 @@ export const useAuthStore = create(
         }
       },
 
-      updateRole: (newRole) => {
-        set({ 
-          user: { ...get().user, role: newRole }
-        })
+      updateRole: (_newRole) => {
+        // Disabled: Role cannot be modified client-side; prevents privilege desync
+        console.warn('updateRole is disabled for security reasons.')
       },
 
       updateUser: (updatedUser) => {

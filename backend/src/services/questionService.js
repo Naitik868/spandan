@@ -46,8 +46,19 @@ export const updateQuestion = async (questionId, updates, userId) => {
     throw new Error('Question not found')
   }
   
-  // Check ownership
-  if (question.createdBy.toString() !== userId.toString()) {
+  // Check ownership: via question.createdBy or room's owning teacher
+  let isAuthorized = false
+  if (question.createdBy) {
+    isAuthorized = String(question.createdBy?._id ?? question.createdBy) === String(userId)
+  }
+  if (!isAuthorized) {
+    const room = await Room.findById(question.roomId)
+    if (room && String(room.teacher?._id ?? room.teacher) === String(userId)) {
+      isAuthorized = true
+    }
+  }
+
+  if (!isAuthorized) {
     throw new Error('Not authorized to update this question')
   }
   
@@ -64,14 +75,26 @@ export const deleteQuestion = async (questionId, userId) => {
     throw new Error('Question not found')
   }
   
-  if (question.createdBy.toString() !== userId.toString()) {
+  // Check ownership: via question.createdBy or room's owning teacher
+  let isAuthorized = false
+  if (question.createdBy) {
+    isAuthorized = String(question.createdBy?._id ?? question.createdBy) === String(userId)
+  }
+  if (!isAuthorized) {
+    const room = await Room.findById(question.roomId)
+    if (room && String(room.teacher?._id ?? room.teacher) === String(userId)) {
+      isAuthorized = true
+    }
+  }
+
+  if (!isAuthorized) {
     throw new Error('Not authorized to delete this question')
   }
   
   await Question.findByIdAndDelete(questionId)
   
-  // Also delete related responses
-  await Response.deleteMany({ question: questionId })
+  // Also delete related responses (using questionId matching Response schema)
+  await Response.deleteMany({ questionId })
   
   return true
 }

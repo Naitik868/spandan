@@ -60,7 +60,20 @@ export const roomSettingsSchema = z.object({
     MCQ: z.number().min(0).max(100).optional(),
     TF: z.number().min(0).max(100).optional(),
     MSQ: z.number().min(0).max(100).optional()
-  }).optional()
+  }).optional(),
+  anonymousLeaderboard: z.boolean().optional(),
+  anonymityPercent: z.number().min(0).max(100).optional(),
+  revealBottomToStudents: z.boolean().optional(),
+  autoStartQuestions: z.boolean().optional(),
+  showCorrectAnswers: z.boolean().optional()
+})
+
+export const updateRoomSchema = z.object({
+  name: z.string().min(1, 'Room name cannot be empty').max(200).optional(),
+  isActive: z.boolean().optional(),
+  endedAt: z.union([z.string(), z.date()]).optional(),
+  settings: roomSettingsSchema.optional(),
+  currentQuestion: z.string().optional()
 })
 
 // Question validation schemas

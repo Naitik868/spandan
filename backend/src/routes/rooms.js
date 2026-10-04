@@ -2,7 +2,8 @@ import express from 'express'
 import { createRoom, getRoomById, getRoomByCode, getRoomsByTeacher, getRoomsByStudent, getActiveRoomsByStudent, updateRoom, deleteRoom } from '../services/roomService.js'
 import { authenticate } from '../middleware/auth.js'
 import { authorize, requireApprovedTeacher } from '../middleware/auth.js'
-import { validate, createRoomSchema } from '../middleware/validation.js'
+import { validate, createRoomSchema, updateRoomSchema } from '../middleware/validation.js'
+import { checkRoomOwnership } from '../utils/roomOwnership.js'
 import { rebuildSnapshot } from '../services/resultsSnapshot.js'
 
 const router = express.Router()
@@ -62,7 +63,8 @@ router.get('/:id', authenticate, async (req, res) => {
     const RoomMember = (await import('../models/RoomMember.js')).default
     
     // Check if user is the room teacher (owner) or a student member
-    const isOwner = room.teacher._id.toString() === req.user._id.toString()
+    const teacherId = String(room.teacher?._id ?? room.teacher)
+    const isOwner = teacherId === String(req.user._id)
     const isStudentMember = await RoomMember.findOne({ roomId: req.params.id, studentId: req.user._id })
     
     // Only the room owner OR room members can access
@@ -127,23 +129,24 @@ router.get('/student/active', authenticate, authorize('student'), async (req, re
 })
 
 // Update room
-router.put('/:id', authenticate, authorize('teacher'), requireApprovedTeacher, async (req, res) => {
+router.put('/:id', authenticate, authorize('teacher'), requireApprovedTeacher, validate(updateRoomSchema), async (req, res) => {
   try {
     const room = await getRoomById(req.params.id)
     
-    if (room.teacher._id.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ error: 'Only the room owner can update the room' })
+    const ownership = checkRoomOwnership(room, req.user._id)
+    if (!ownership.ok) {
+      return res.status(ownership.status).json({ error: ownership.error })
     }
 
     // Prevent reactivating an ended room
-    if (room.endedAt && req.body.isActive === true) {
+    if (room.endedAt && req.validatedBody.isActive === true) {
       return res.status(400).json({ error: 'Cannot reactivate an ended room' })
     }
 
-    const updatedRoom = await updateRoom(req.params.id, req.body)
+    const updatedRoom = await updateRoom(req.params.id, req.validatedBody)
     
     // If room is being ended, emit socket event to notify all participants
-    if (req.body.isActive === false && updatedRoom.endedAt) {
+    if (req.validatedBody.isActive === false && updatedRoom.endedAt) {
       const io = req.app.get('io')
       io.to(room.code).emit('room:ended', { roomId: room._id, endedAt: updatedRoom.endedAt })
       // Force a final leaderboard recompute+broadcast so the settled board is complete — the live
@@ -167,8 +170,9 @@ router.delete('/:id', authenticate, authorize('teacher'), requireApprovedTeacher
   try {
     const room = await getRoomById(req.params.id)
     
-    if (room.teacher._id.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ error: 'Only the room owner can delete the room' })
+    const ownership = checkRoomOwnership(room, req.user._id)
+    if (!ownership.ok) {
+      return res.status(ownership.status).json({ error: ownership.error })
     }
 
     await deleteRoom(req.params.id)

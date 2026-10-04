@@ -75,8 +75,9 @@ router.get('/sessions', requireResearchKey, async (req, res) => {
         { name: { $regex: 'Day\\s*\\d+\\s*Evening Session', $options: 'i' } },
         { $expr: { $in: [{ $hour: { date: '$endedAt', timezone: 'Asia/Kolkata' } }, [20, 21]] } }
       ]
-    } else if (namePattern) {
-      filter.name = { $regex: namePattern, $options: 'i' }
+    } else if (namePattern && typeof namePattern === 'string') {
+      const sanitized = namePattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      filter.name = { $regex: sanitized, $options: 'i' }
     }
 
     const rooms = await Room.find(filter).sort({ endedAt: 1 }).limit(limit).lean()
